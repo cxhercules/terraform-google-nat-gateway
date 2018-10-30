@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-variable gke_master_ip {
-  description = "The IP address of the GKE master or a semicolon separated string of multiple IPs"
-}
-
 variable gke_node_tag {
   description = "The network tag for the gke nodes"
 }
@@ -42,6 +38,12 @@ provider google {
   region = "${var.region}"
 }
 
+variable "project" {
+  description = "The project in which to hold the components"
+  type        = "string"
+}
+
+
 module "nat" {
   // source  = "github.com/GoogleCloudPlatform/terraform-google-nat-gateway"
   source     = "../../"
@@ -52,12 +54,19 @@ module "nat" {
   subnetwork = "${var.subnetwork == "" ? var.network : var.subnetwork}"
 }
 
+module "gke" {
+  source = "git::https://github.com/cxhercules/gke-network-policy-demo.git?ref=demo-code"
+  project = "${var.project}"
+  region = "${var.region}"
+  zone = "${var.zone}"
+}
+
 // Route so that traffic to the master goes through the default gateway.
 // This fixes things like kubectl exec and logs
 resource "google_compute_route" "gke-master-default-gw" {
-  count            = "${var.gke_master_ip == "" ? 0 : length(split(";", var.gke_master_ip))}"
+  count            = "${module.gke.endpoint == "" ? 0 : length(split(";", module.gke.endpoint))}"
   name             = "${var.gke_node_tag}-master-default-gw-${count.index + 1}"
-  dest_range       = "${element(split(";", replace(var.gke_master_ip, "/32", "")), count.index)}"
+  dest_range       = "${element(split(";", replace(module.gke.endpoint, "/32", "")), count.index)}"
   network          = "${var.network}"
   next_hop_gateway = "default-internet-gateway"
   tags             = ["${var.gke_node_tag}"]
